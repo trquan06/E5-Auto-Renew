@@ -1,0 +1,17 @@
+services:
+  webui:
+    image: ghcr.io/OWNER/ms365-auto-renew:latest
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /app/data
+      DEFAULT_TIMEZONE: UTC
+      PUBLIC_BASE_URL: https://ms365.example.com
+    ports:
+      - "8080:8080"
+    volumes:
+      - ms365_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+volumes:
+  ms365_data:

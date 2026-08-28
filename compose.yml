@@ -1,0 +1,27 @@
+name: ms365-auto-renew
+services:
+  webui:
+    image: ${MS365_IMAGE:-ghcr.io/OWNER/ms365-auto-renew:latest}
+    container_name: ms365-auto-renew
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /app/data
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - ./data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
