@@ -1,0 +1,462 @@
+E5 AUTO RENEW — GITHUB PUBLIC RELEASE PLAN
+============================================
+
+Mục tiêu
+--------
+Chuẩn bị repository E5-Auto-Renew để public và phát hành trên GitHub an toàn,
+có thể clone sạch, build, test và chạy theo đúng tài liệu mà không vô tình đưa
+secret hoặc dữ liệu runtime vào Git/Docker build context.
+
+Repository mục tiêu:
+https://github.com/trquan06/E5-Auto-Renew
+
+GHCR image chuẩn:
+ghcr.io/trquan06/e5-auto-renew
+
+Trạng thái khi lập plan
+-----------------------
+- Chưa có .github/ và Dependabot.
+- Chưa có .env.example, .dockerignore và data/.gitkeep.
+- .gitignore chưa bảo vệ đầy đủ database, key, sidecar và .env.*.
+- README, Dockerfile, Compose, Portainer và docs vẫn còn tên/OWNER placeholder.
+- PLAN.md và TASK_CHECKLIST.md đang claim một số automation chưa tồn tại.
+- run.bat đang cd vào subfolder không tồn tại.
+- Docker chạy UID/GID 10001 nhưng Compose dùng bind mount ./data; clean clone trên
+  Linux có thể không cho container ghi database/key.
+- Uvicorn đang trust forwarded headers từ mọi IP. Rate limiting dựa vào client IP,
+  vì vậy đây là release blocker chứ không chỉ là hardening sau release.
+
+Nguyên tắc thực hiện
+--------------------
+1. Không thay đổi behavior chính ngoài phạm vi release, packaging và security.
+2. Không tick hoàn thành dựa trên việc đọc code; phải có lệnh hoặc bằng chứng verify.
+3. Không commit .env, database, key, token, log, backup hoặc credential thật.
+4. Không gửi các file trên vào Docker build context.
+5. Documentation chỉ mô tả tính năng/workflow đã tồn tại và đã kiểm tra.
+6. Secret từng xuất hiện trong Git public phải được rotate/revoke; xóa ở commit mới
+   không đủ.
+7. Giữ README.md và README.vi.md đồng bộ về command, URL, image, port và security.
+8. Ưu tiên mặc định an toàn nhưng giữ đường nâng cấp rõ cho người dùng v1.
+
+Mức ưu tiên
+-----------
+P0: Bắt buộc trước lần push/public đầu tiên.
+P1: Bắt buộc trước GitHub Release/GHCR image chính thức.
+P2: Hardening có thể làm sau bản release cơ bản nếu rủi ro đã được document rõ.
+
+======================================================================
+PHASE 0 — CHỐT BASELINE VÀ PHẠM VI
+======================================================================
+
+0.1 Làm việc trong repository Git thật
+--------------------------------------
+- Xác nhận thư mục có .git và remote origin đúng repository mục tiêu.
+- Ghi lại branch, git status và commit hiện tại.
+- Không audit history trên ZIP/extracted folder rồi coi là đã pass.
+
+0.2 Chụp baseline
+-----------------
+Lưu kết quả git status --short, git ls-files, phiên bản Python/Node/npm/Docker,
+Docker Compose và pytest hiện tại.
+
+0.3 Không ghi đè thay đổi local
+------------------------------
+- Review git diff trước khi sửa.
+- Không reset hoặc xóa file runtime của người dùng.
+- Nếu file nhạy cảm đang được track, chỉ remove khỏi Git index; giữ bản local an toàn
+  nếu người dùng vẫn cần.
+
+======================================================================
+PHASE 1 — P0: BẢO VỆ GIT VÀ DOCKER BUILD CONTEXT
+======================================================================
+
+1.1 Cập nhật .gitignore
+----------------------
+Thêm tối thiểu:
+
+# Runtime data
+data/*
+!data/.gitkeep
+
+# SQLite databases and sidecars
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Secrets and runtime logs
+*.key
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+Không ignore toàn bộ JSON/YAML vì repo cần version-control config và workflow.
+
+1.2 Tạo data/.gitkeep
+---------------------
+- Tạo data/.gitkeep để giữ cấu trúc thư mục.
+- Verify Git chỉ track .gitkeep trong data/.
+- Không coi .gitkeep là giải pháp quyền ghi cho Docker bind mount.
+
+1.3 Tạo .dockerignore
+--------------------
+Loại khỏi build context tối thiểu:
+- .git và metadata IDE không cần thiết;
+- .env và .env.* nhưng cho phép .env.example nếu cần;
+- data/ và database/key/log/backup;
+- .venv, venv, __pycache__, .pytest_cache và *.pyc;
+- node_modules, coverage và build output không dùng làm Docker input;
+- tài liệu release nội bộ nếu không cần trong image.
+
+Verify rằng secret/runtime file không được gửi vào context và không xuất hiện trong
+layer/image cuối.
+
+1.4 Kiểm tra tracked files và Git history
+-----------------------------------------
+- Kiểm tra git ls-files với các pattern env, secret, key, db, sqlite, token, backup.
+- Nếu runtime file đang được track, dùng git rm --cached với đúng file; không xóa bản
+  local ngoài ý muốn; verify git check-ignore sau khi app tạo lại file.
+- Nếu repo từng được push, scan toàn bộ history bằng secret scanner hỗ trợ Git history.
+- Rotate/revoke tenant secret, refresh token, bot token, webhook hoặc password bị lộ.
+- Purge history bằng git filter-repo/BFG khi cần; chỉ force-push sau khi đánh giá tác động.
+
+======================================================================
+PHASE 2 — P0: CONFIG, DATA DIRECTORY VÀ QUICK START
+======================================================================
+
+2.1 Tạo .env.example từ source thật
+-----------------------------------
+Nội dung public tối thiểu nên gồm:
+- HOST_PORT=8080, dùng bởi Compose;
+- DATA_DIR=./data cho local Python, kèm chú thích Docker dùng /app/data;
+- PUBLIC_BASE_URL=;
+- ALLOWED_ORIGINS=;
+- SECRET_KEY=, để trống nhằm auto-generate/persist;
+- DEFAULT_TIMEZONE=UTC;
+- LOG_RETENTION_DAYS=30;
+- LOG_LEVEL nếu chính thức hỗ trợ người vận hành.
+
+WEBUI_PASSWORD chỉ được nhắc dưới dạng migration bridge, không khuyến nghị cho cài mới.
+DATABASE_URL, PORT, DEBUG và các biến notification chỉ document nếu quyết định chúng
+là public/supported configuration. Không đưa credential mẫu có hình dạng giống secret.
+
+2.2 Đồng bộ Compose
+-------------------
+- compose.build.yml là flow build local chính thức.
+- compose.yml dùng ghcr.io/trquan06/e5-auto-renew với tag rõ ràng.
+- Biến trong Compose khớp .env.example và app/config.py.
+- Không hardcode secret hoặc PUBLIC_BASE_URL production.
+- SECRET_KEY rỗng phải kích hoạt generated persistent key như design.
+
+2.3 Giải quyết quyền ghi data trên Linux
+----------------------------------------
+Container chạy UID/GID 10001. Chọn và document một giải pháp chính thức:
+
+Phương án khuyến nghị:
+- dùng named volume mặc định trong Compose để Docker quản lý ownership;
+- cung cấp bind-mount override cho người cần truy cập trực tiếp file host.
+
+Nếu vẫn dùng ./data bind mount:
+- Quick Start phải tạo thư mục và cấp owner 10001:10001 trước khi start;
+- test trên clean Linux clone;
+- không dùng chmod 777.
+
+2.4 Sửa Quick Start
+-------------------
+Flow clean clone phải:
+- clone https://github.com/trquan06/E5-Auto-Renew.git;
+- cd E5-Auto-Renew;
+- copy .env.example thành .env, nêu lệnh Bash và PowerShell khi phù hợp;
+- chuẩn bị data theo storage strategy đã chọn;
+- chạy docker compose -f compose.build.yml up -d --build;
+- xem logs để lấy setup code;
+- kiểm tra /health và mở WebUI.
+
+2.5 Sửa run.bat
+---------------
+- Không cd vào ms365-auto-renew subfolder.
+- Chạy run.py từ chính thư mục chứa run.bat.
+- Trả lỗi có ích nếu Python/dependency thiếu.
+- Smoke test command path thực tế trên Windows.
+
+======================================================================
+PHASE 3 — P0: TÊN REPOSITORY, IMAGE VÀ DOCUMENTATION TRUTH
+======================================================================
+
+3.1 Thay placeholder có chủ đích
+--------------------------------
+Search case-insensitive OWNER, github.com/OWNER, ghcr.io/OWNER, repository URL/name cũ,
+cd ms365-auto-renew, MS365_IMAGE, hostname và example.com.
+
+Chuẩn hóa:
+- Repo: https://github.com/trquan06/E5-Auto-Renew
+- Image: ghcr.io/trquan06/e5-auto-renew
+
+Không đổi package slug ms365-auto-renew trong pyproject/package.json nếu đó là tên
+package kỹ thuật có chủ đích.
+
+3.2 Cập nhật tất cả consumer
+----------------------------
+Ít nhất kiểm tra Dockerfile, hai Compose, hai Portainer stack, README song ngữ,
+docs/DEPLOYMENT.md, ENTRA_SETUP.md, OPERATIONS.md, GITHUB_PACKAGE.md, PLAN.md,
+TASK_CHECKLIST.md và run.bat.
+
+3.3 Sửa claim sai hiện tại
+--------------------------
+- Trước khi .github tồn tại, không claim CI, scanner, GHCR multi-arch hoặc Dependabot.
+- Bỏ .github khỏi project layout hoặc triển khai nó ngay.
+- TASK_CHECKLIST.md chỉ giữ [x] khi có bằng chứng repository tương ứng.
+- GITHUB_PACKAGE.md dùng đúng folder E5-Auto-Renew và không claim ZIP filtering nếu
+  không có script/process tạo ZIP được kiểm chứng.
+
+======================================================================
+PHASE 4 — P0/P1: TRUSTED PROXY VÀ WEB SECURITY BASELINE
+======================================================================
+
+4.1 Không trust forwarded headers từ mọi IP (P0)
+------------------------------------------------
+Hiện --forwarded-allow-ips "*" cho phép client trực tiếp spoof forwarded headers,
+ảnh hưởng URL/origin và có thể né rate limit dựa trên client IP.
+
+Yêu cầu trước public release:
+- bỏ wildcard mặc định;
+- chỉ trust IP/subnet reverse proxy hoặc cung cấp cấu hình explicit;
+- sau proxy phải đặt PUBLIC_BASE_URL là external HTTPS origin;
+- document network topology và không expose port 8080 trực tiếp ra Internet;
+- test spoof X-Forwarded-For/Host/Proto từ untrusted client không đổi identity/origin;
+- test trusted proxy vẫn truyền đúng scheme, host và client IP.
+
+4.2 Security headers (P1)
+-------------------------
+Vì admin JWT hiện nằm trong localStorage, thêm:
+- Content-Security-Policy phù hợp static app local;
+- frame-ancestors hoặc X-Frame-Options;
+- X-Content-Type-Options: nosniff;
+- Referrer-Policy;
+- Cache-Control: no-store cho API nhạy cảm;
+- HSTS chỉ khi HTTPS được kiểm soát tại edge/proxy.
+
+Không làm hỏng FastAPI docs/OAuth popup; thêm test cho header quan trọng.
+
+4.3 JWT cookie migration (P2)
+-----------------------------
+Đánh giá chuyển bearer JWT từ localStorage sang cookie HttpOnly, Secure,
+SameSite=Lax/Strict. Nếu chuyển phải thiết kế CSRF protection, cập nhật login/logout,
+expiry và test state-changing endpoints/OAuth popup.
+
+======================================================================
+PHASE 5 — P1: GITHUB ACTIONS VÀ DEPENDABOT
+======================================================================
+
+Cấu trúc mục tiêu:
+.github/
+  workflows/
+    ci.yml
+    docker.yml
+    security.yml
+  dependabot.yml
+
+5.1 ci.yml
+----------
+Trigger push và pull_request.
+
+Backend matrix:
+- Python 3.11 và 3.12;
+- install requirements-dev.txt;
+- python -m compileall app tests run.py;
+- pytest -q.
+
+Frontend reproducibility:
+- Node.js 20;
+- npm ci;
+- npm run build;
+- git diff --exit-code -- app/static.
+
+Thêm concurrency cancel cho branch/PR khi phù hợp. Chỉ thêm linter nếu repo đã chọn
+và cấu hình chuẩn lint.
+
+5.2 docker.yml
+--------------
+- Pull request: build một platform và smoke test, không login/push.
+- Main: build/push edge nếu đây là policy đã chọn.
+- Tag vX.Y.Z: publish semantic tags và latest theo policy rõ ràng.
+- Image lowercase ghcr.io/trquan06/e5-auto-renew.
+- Publish linux/amd64 và linux/arm64 nếu docs claim multi-arch.
+- Smoke test image đơn kiến trúc trước khi publish manifest.
+- Quyền mặc định read-only; packages:write chỉ ở job push.
+- Không chạy secret-bearing push step trên untrusted fork PR.
+- Gắn OCI source/revision/version/created labels từ metadata thật.
+
+5.3 security.yml
+----------------
+- pip-audit cho Python dependencies;
+- secret scan current tree và full Git history;
+- Trivy filesystem hoặc container image scan;
+- fail theo severity policy đã document;
+- không log secret;
+- pin action versions ổn định, ưu tiên full commit SHA cho action nhạy cảm.
+
+5.4 dependabot.yml
+------------------
+Weekly updates cho pip, npm, github-actions và docker. Đặt PR limit hợp lý và group
+minor/patch khi phù hợp.
+
+======================================================================
+PHASE 6 — P1: VALIDATION THỰC TẾ
+======================================================================
+
+6.1 Clean dependency install
+----------------------------
+- Tạo môi trường sạch cho Python 3.11 và 3.12.
+- pip install -r requirements-dev.txt.
+- npm ci bằng Node 20.
+- Không dùng credential production.
+
+6.2 Compile, test và asset build
+--------------------------------
+- python -m compileall app tests run.py;
+- pytest -q trên Python 3.11 và 3.12;
+- npm run build;
+- verify frontend build không tạo diff ngoài dự kiến.
+
+6.3 Docker build
+----------------
+- docker build -t e5-auto-renew:test .;
+- docker compose -f compose.build.yml build;
+- inspect image user là 10001:10001;
+- inspect final image không chứa .env, data, .git hoặc test secret.
+
+6.4 Runtime smoke test trên clean data
+--------------------------------------
+Kiểm tra container start/healthy, /health, setup page, pre-setup API gate, việc tạo
+renew.db/secret.key, permission key trên Linux, persistent restart, log không lộ secret
+và storage strategy hoạt động đúng Quick Start.
+
+6.5 Git ignore runtime verification
+-----------------------------------
+Sau khi chạy app:
+- git status không hiện .env, renew.db, secret.key, sidecar hoặc log;
+- git check-ignore -v pass cho từng file;
+- git add . dry-run không đưa runtime file vào staging.
+
+6.6 Clean clone test
+--------------------
+Clone vào thư mục mới trên Linux và, nếu hỗ trợ, Windows. Làm đúng README từ đầu,
+không sửa path/permission ngoài tài liệu; build/start và setup flow phải thành công.
+
+======================================================================
+PHASE 7 — P1: DOCUMENTATION VÀ RELEASE METADATA
+======================================================================
+
+7.1 README song ngữ
+-------------------
+Đồng bộ repository/folder/image, Docker flows, .env.example, storage ownership/backup,
+port/reverse proxy, PUBLIC_BASE_URL/OAuth callback, CI/security thực tế và rollback.
+
+7.2 SECURITY.md
+---------------
+Bổ sung quy tắc không commit runtime secret, quy trình rotate/revoke khi leak, lưu ý
+database và key phải backup cùng nhau nhưng đều là dữ liệu nhạy cảm, trusted proxy,
+PUBLIC_BASE_URL, private vulnerability reporting và supported-version policy đúng.
+
+7.3 CONTRIBUTING và deployment docs
+-----------------------------------
+- Command setup/test/build đúng và nêu Node/Python versions.
+- Có checklist i18n/generated frontend assets.
+- Portainer dùng repo/image thật.
+- Production khuyến nghị immutable tag thay vì latest.
+
+7.4 Version và release notes
+----------------------------
+- Đồng bộ version trong pyproject.toml, package.json, Docker labels và app config.
+- Tạo changelog/release notes cho v2.0.0.
+- Xác nhận license và third-party notices nếu cần.
+- Không tạo tag cho đến khi toàn bộ release gate pass.
+
+======================================================================
+PHASE 8 — FINAL AUDIT VÀ PUBLISH
+======================================================================
+
+8.1 Placeholder và secret audit
+--------------------------------
+Search cả hidden files cho OWNER, TODO, FIXME, CHANGE_ME, repo/folder/image cũ,
+example.com/localhost cần review và mọi tenant/client ID thật, secret, OAuth token,
+JWT, password, private key, Telegram token hoặc webhook URL.
+
+8.2 Unwanted-file audit
+-----------------------
+Không track cache, virtualenv, node_modules, runtime log/database/key/sidecar, local
+backup, report nhạy cảm hoặc metadata IDE/user không cần thiết.
+
+8.3 GitHub validation
+---------------------
+- Push branch/PR và chờ CI, Docker và security workflows pass.
+- Xác nhận GitHub nhận Dependabot config.
+- Review Actions permissions/logs.
+- Pull GHCR image bằng digest và smoke test lại.
+
+8.4 Publish
+-----------
+Chỉ public/tag release khi Git tree và staged diff đã review, history scan sạch hoặc
+secret đã rotate, toàn bộ test/scan pass, clean-clone flow pass và release metadata đúng.
+
+======================================================================
+THỨ TỰ THỰC HIỆN KHUYẾN NGHỊ
+======================================================================
+
+P0 — Trước public push:
+1. Làm việc trong Git repo thật và audit tracked/history.
+2. Sửa .gitignore, tạo data/.gitkeep và .dockerignore.
+3. Tạo .env.example.
+4. Chốt named volume hoặc bind-mount ownership.
+5. Sửa README Quick Start và run.bat.
+6. Replace OWNER/repo/image placeholders.
+7. Bỏ claim automation sai hoặc triển khai automation.
+8. Bỏ forwarded-allow-ips wildcard và test trusted proxy.
+
+P1 — Trước GitHub Release/GHCR stable:
+9. Tạo CI, Docker publish, security workflows và Dependabot.
+10. Thêm frontend reproducibility và npm Dependabot.
+11. Thêm security headers.
+12. Chạy full test, Docker smoke, clean-clone và Git ignore verification.
+13. Đồng bộ toàn bộ docs/version/release notes.
+
+P2 — Sau release cơ bản:
+14. JWT localStorage sang HttpOnly cookie.
+15. CSRF protection và session lifecycle nâng cao.
+16. Thêm provenance/SBOM/signing nếu muốn hardening supply chain sâu hơn.
+
+======================================================================
+DEFINITION OF DONE
+======================================================================
+
+Repository chỉ được coi là release-ready khi tất cả điều kiện sau có bằng chứng:
+1. git add . không thể stage .env, database, key, sidecar, log hoặc runtime backup.
+2. Docker context/image không chứa secret, runtime data hoặc Git metadata.
+3. .env.example khớp source/Compose và không chứa credential thật.
+4. Clean clone Linux chạy đúng Quick Start, kể cả quyền ghi data.
+5. run.bat dùng đúng repository layout.
+6. Không còn OWNER hoặc repo/image/path placeholder không chủ đích.
+7. Trusted proxy không dùng wildcard mặc định và không thể spoof để né rate limit.
+8. README song ngữ và docs phản ánh đúng implementation.
+9. CI pass Python 3.11/3.12; pytest pass.
+10. npm ci/build pass và generated frontend assets không lệch.
+11. Docker non-root, health và persistent restart smoke test pass.
+12. Dependency, secret-history và filesystem/container scans pass theo policy.
+13. Dependabot được nhận cho pip, npm, Docker và Actions.
+14. GHCR path/tags/architectures đúng và image pull-by-digest chạy được.
+15. Không còn credential thật chưa rotate trong tree hoặc history.
+
+Không tick release-ready nếu một gate chưa chạy vì thiếu Git, dependency, Docker hoặc
+môi trường CI. Trường hợp đó phải ghi rõ NOT VERIFIED.

@@ -1,8 +1,8 @@
-name: ms365-auto-renew
+name: e5-auto-renew
 services:
   webui:
-    image: ${MS365_IMAGE:-ghcr.io/OWNER/ms365-auto-renew:latest}
-    container_name: ms365-auto-renew
+    image: ${E5_IMAGE:-ghcr.io/trquan06/e5-auto-renew:2.0.0}
+    container_name: e5-auto-renew
     restart: unless-stopped
     environment:
       DATA_DIR: /app/data
@@ -11,10 +11,12 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       SECRET_KEY: ${SECRET_KEY:-}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-8080}:8080"
     volumes:
-      - ./data:/app/data
+      - e5_data:/app/data
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -25,3 +27,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+volumes:
+  e5_data:

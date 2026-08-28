@@ -1,0 +1,104 @@
+name: Docker
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  IMAGE_NAME: ghcr.io/trquan06/e5-auto-renew
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Build smoke-test image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: e5-auto-renew:smoke
+          build-args: |
+            VERSION=2.0.0-test
+            VCS_REF=${{ github.sha }}
+      - name: Verify non-root runtime and health
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Config.User}}' e5-auto-renew:smoke)" = "10001:10001"
+          docker volume create e5-smoke-data >/dev/null
+          docker run -d --name e5-smoke -p 18080:8080 -v e5-smoke-data:/app/data e5-auto-renew:smoke
+          trap 'docker rm -f e5-smoke >/dev/null 2>&1 || true; docker volume rm e5-smoke-data >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..45}; do
+            if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' e5-smoke)" = "healthy" ]; then
+              break
+            fi
+            if [ "$attempt" -eq 45 ]; then
+              docker logs e5-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:18080/health >/dev/null
+          curl --fail --silent http://127.0.0.1:18080/ | grep -q 'Secure first-time setup'
+
+  publish:
+    if: github.event_name == 'push'
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate image tags and labels
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/trquan06/E5-Auto-Renew
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Capture build time
+        id: build-time
+        shell: bash
+        run: echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+      - name: Build and publish multi-architecture image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '2.0.0-edge' }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.build-time.outputs.created }}
+          provenance: mode=max
+          sbom: true

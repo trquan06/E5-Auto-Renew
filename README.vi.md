@@ -16,7 +16,7 @@ MS365 Auto Renew là WebUI tự lưu trữ dùng để lên lịch các khối l
 - Mặc định tiếng Anh, kèm tiếng Việt và tiếng Trung giản thể; ghi nhớ ngôn ngữ và theme ở trình duyệt.
 - Dashboard, tài khoản, lịch tác vụ, log thực thi, cấu hình thông báo, trạng thái tải/trống/lỗi, hộp xác nhận và focus bàn phím rõ ràng.
 - Tailwind CSS và Chart.js được ghim phiên bản, phục vụ cục bộ; không phụ thuộc CDN khi chạy.
-- CI Python 3.11/3.12, Docker smoke test, quét dependency/secret/image và phát hành GHCR đa kiến trúc.
+- Workflow trong repository cho CI Python 3.11/3.12, Docker smoke test, quét dependency/secret/filesystem và phát hành GHCR đa kiến trúc.
 
 ## Khởi động nhanh bằng Docker
 
@@ -24,22 +24,25 @@ Yêu cầu Docker Engine 24+ và Docker Compose v2.
 
 ```bash
 git clone https://github.com/trquan06/E5-Auto-Renew.git
-cd ms365-auto-renew
+cd E5-Auto-Renew
 cp .env.example .env
 docker compose -f compose.build.yml up -d --build
 docker compose -f compose.build.yml logs webui
+curl --fail http://localhost:8080/health
 ```
+
+Trong PowerShell, dùng `Copy-Item .env.example .env`; các lệnh Docker còn lại không đổi.
 
 Mở `http://localhost:8080`, lấy mã thiết lập trong log, tạo mật khẩu quản trị rồi đăng nhập. Mã hết hạn sau 15 phút và thay đổi nếu ứng dụng khởi động lại trước khi hoàn tất thiết lập.
 
-Nếu dùng image phát hành, thay `OWNER` trong `compose.yml`, sau đó chạy:
+Nếu dùng image phát hành `ghcr.io/trquan06/e5-auto-renew:2.0.0`, chạy:
 
 ```bash
 docker compose up -d
 docker compose logs webui
 ```
 
-Database SQLite, khóa mã hóa và trạng thái runtime nằm tại `/app/data`. Hãy giữ volume này bền vững và riêng tư. Với bind mount trên Linux, UID/GID `10001` phải có quyền ghi thư mục data ở host.
+Database SQLite, khóa mã hóa và trạng thái runtime nằm trong volume Docker `e5_data` tại `/app/data`. Compose giữ volume qua lần tạo lại container. Hãy bảo vệ và sao lưu chúng cùng nhau. Nếu chủ động chuyển sang bind mount Linux, chạy `mkdir -p data && sudo chown 10001:10001 data` trước; không dùng `chmod 777`.
 
 ## Chạy bằng Python
 
@@ -72,20 +75,26 @@ Sao chép `.env.example` thành `.env`.
 
 | Biến | Mặc định | Công dụng |
 |---|---:|---|
+| `HOST_BIND` | `127.0.0.1` | Interface host mà Compose bind; nên giữ loopback |
+| `HOST_PORT` | `8080` | Cổng host mà Compose dùng |
 | `DATA_DIR` | `./data` cục bộ, `/app/data` trong Docker | Database và khóa mã hóa tự sinh |
 | `PUBLIC_BASE_URL` | trống | Origin WebUI bên ngoài dùng cho OAuth redirect |
 | `ALLOWED_ORIGINS` | trống | Các origin tin cậy bổ sung, phân tách dấu phẩy; không dùng wildcard |
 | `SECRET_KEY` | tự sinh | Ghi đè khóa bền vững; đổi khóa làm session và token cũ không đọc được |
 | `DEFAULT_TIMEZONE` | `UTC` | Múi giờ IANA mặc định cho lịch mới |
 | `LOG_RETENTION_DAYS` | `30` | Mục tiêu lưu log vận hành |
+| `LOG_LEVEL` | `INFO` | Mức log của ứng dụng Python |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Danh sách IP/CIDR proxy rõ ràng; ứng dụng từ chối `*` |
 
 `WEBUI_PASSWORD` chỉ là cầu nối nâng cấp v1. Biến này không có giá trị mặc định, sẽ được hash vào database lúc khởi động và nên được xóa khỏi môi trường sau đó.
+
+Slug package Python/npm nội bộ tiếp tục dùng `ms365-auto-renew` để tương thích; tên repository, thư mục, container và GHCR dùng E5 Auto Renew.
 
 ## Dữ liệu và bảo mật
 
 - Không công khai `.env`, `data/renew.db`, `data/secret.key`, file sidecar database, log, token hoặc bản sao lưu.
 - Sao lưu cả volume data để database luôn đi cùng đúng `secret.key`.
-- Đặt triển khai từ xa sau reverse proxy HTTPS; `PUBLIC_BASE_URL` phải trùng origin mà trình duyệt nhìn thấy.
+- Đặt triển khai từ xa sau reverse proxy HTTPS; `PUBLIC_BASE_URL` phải trùng origin trình duyệt và `FORWARDED_ALLOW_IPS` chỉ chứa IP/CIDR của proxy. Giữ cổng 8080 ở loopback hoặc chặn khỏi Internet công cộng.
 - Authorization code chỉ được giữ đủ lâu để đổi token, sau đó bị xóa khỏi URL callback và payload của cửa sổ OAuth.
 - Đọc [SECURITY.md](SECURITY.md) trước khi mở dịch vụ ra mạng.
 
@@ -95,4 +104,4 @@ Làm theo [Operations](docs/OPERATIONS.md): sao lưu `/app/data`, kéo image m�
 
 ## Đóng góp và giấy phép
 
-Xem [CONTRIBUTING.md](CONTRIBUTING.md). Dự án dùng [MIT License](LICENSE).
+Xem [CONTRIBUTING.md](CONTRIBUTING.md). Dự án dùng [MIT License](LICENSE); kết quả rà soát giấy phép dependency nằm trong [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

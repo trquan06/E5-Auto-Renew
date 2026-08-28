@@ -30,6 +30,28 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
+APP_CSP = (
+    "default-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "font-src 'self' data:; "
+    "form-action 'self'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+DOCS_CSP = (
+    "default-src 'none'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "connect-src 'self'; "
+    "font-src 'self' data: https://cdn.jsdelivr.net https://unpkg.com; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -67,7 +89,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def setup_gate(request: Request, call_next):
-    """Expose only setup, health, and the static WebUI before initialization."""
+    """Gate pre-setup APIs and attach the browser security baseline."""
     await setup_manager.ensure_prepared()
     path = request.url.path
     public_before_setup = (
@@ -77,13 +99,23 @@ async def setup_gate(request: Request, call_next):
         or (not path.startswith("/api/") and path not in {"/docs", "/redoc", "/openapi.json"})
     )
     if not setup_manager.initialized and not public_before_setup:
-        return JSONResponse(
+        response = JSONResponse(
             status_code=503,
             content={"detail": error_detail("setup_required", "Complete first-run setup to continue.")},
         )
-    response = await call_next(request)
+    else:
+        response = await call_next(request)
+
     if path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        DOCS_CSP if path in {"/docs", "/redoc", "/openapi.json"} else APP_CSP,
+    )
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     return response
 
 

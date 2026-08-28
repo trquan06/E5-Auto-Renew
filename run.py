@@ -16,6 +16,8 @@ if __name__ == "__main__":
         "app.main:app",
         host=settings.HOST,
         port=settings.PORT,
+        proxy_headers=True,
+        forwarded_allow_ips=settings.FORWARDED_ALLOW_IPS,
         reload=settings.DEBUG,
         app_dir=str(PROJECT_DIR),
     )

@@ -1,17 +1,18 @@
 services:
   webui:
-    image: ghcr.io/OWNER/ms365-auto-renew:latest
+    image: ghcr.io/trquan06/e5-auto-renew:2.0.0
     restart: unless-stopped
     environment:
       DATA_DIR: /app/data
       DEFAULT_TIMEZONE: UTC
-      PUBLIC_BASE_URL: https://ms365.example.com
+      PUBLIC_BASE_URL: ""
+      FORWARDED_ALLOW_IPS: 127.0.0.1
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
-      - ms365_data:/app/data
+      - e5_data:/app/data
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
 volumes:
-  ms365_data:
+  e5_data:

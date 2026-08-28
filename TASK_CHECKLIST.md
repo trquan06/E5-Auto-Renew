@@ -3,11 +3,11 @@
 ## Repository and release
 
 - [x] Source flattened to repository root
-- [x] Existing local database backed up outside release tree
-- [x] Runtime data, caches, environments, credentials, and secrets ignored
+- [ ] Existing local database backup outside the release tree is not verifiable in this extracted folder
+- [x] Runtime data, caches, environments, credentials, and secrets have ignore rules
 - [x] Version synchronized to `2.0.0`
 - [x] MIT license, security policy, and contribution guide added
-- [ ] Replace `OWNER`/hostname placeholders when the final GitHub repository is known
+- [x] Repository and image paths use `trquan06/E5-Auto-Renew` and `ghcr.io/trquan06/e5-auto-renew`
 
 ## Security
 
@@ -40,10 +40,10 @@
 - [x] Published-image and local-build Compose files
 - [x] Portainer image and repository-build examples
 - [x] Environment template without real secrets
-- [x] Python 3.11/3.12 CI and frontend reproducibility job
-- [x] Docker smoke test and dependency/secret/image scanning
-- [x] GHCR multi-architecture `edge`, semantic-version, and `latest` tags
-- [x] Dependabot for pip, npm, Docker, and Actions
+- [x] Python 3.11/3.12 CI and frontend reproducibility workflow definitions
+- [x] Docker smoke test and dependency/secret/filesystem scan workflow definitions
+- [x] GHCR multi-architecture `edge`, semantic-version, and `latest` workflow policy
+- [x] Dependabot configuration for pip, npm, Docker, and Actions
 
 ## Documentation and QA
 
@@ -53,4 +53,6 @@
 - [x] Independent-project disclaimer and no renewal guarantee
 - [x] Setup/auth/OAuth/account/log/i18n/static/scheduler/Graph tests
 - [ ] CI must pass in the final GitHub repository
+- [ ] Security and Docker workflows must pass in the final GitHub repository
+- [ ] GHCR tags, architectures, digest pull, SBOM, and provenance must be verified after publication
 - [ ] Replace the local dashboard capture if the public branding changes

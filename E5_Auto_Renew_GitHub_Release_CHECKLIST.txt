@@ -1,0 +1,504 @@
+E5 AUTO RENEW — GITHUB PUBLIC RELEASE CHECKLIST
+=================================================
+
+Quy tắc sử dụng
+---------------
+- Chỉ đổi [ ] thành [x] khi đã thực hiện và có bằng chứng verify.
+- Nếu không có Git/Docker/dependency/môi trường phù hợp, ghi NOT VERIFIED; không tick.
+- Không coi compile bằng Python ngoài 3.11/3.12 là thay thế CI matrix yêu cầu.
+- Không coi việc xóa secret ở commit mới là đã xử lý leak trong Git history.
+- Sau mỗi nhóm thay đổi, cập nhật checklist và lưu command/output hoặc link CI tương ứng.
+
+Repository: https://github.com/trquan06/E5-Auto-Renew
+Image:      ghcr.io/trquan06/e5-auto-renew
+
+======================================================================
+PHASE 0 — BASELINE
+======================================================================
+
+[ ] 1. Làm việc trong repository Git thật
+    [ ] Thư mục có .git
+    [ ] git remote -v trỏ đúng repository mục tiêu
+    [ ] Ghi lại branch và commit hiện tại
+    [ ] Review git status --short
+    [ ] Review git diff và không ghi đè thay đổi local ngoài phạm vi
+    NOT VERIFIED: thư mục được cung cấp không có .git; không thể xác nhận remote, branch, commit, status hoặc diff.
+
+[ ] 2. Ghi baseline công cụ
+    [ ] Python 3.11 sẵn sàng
+    [x] Python 3.12 sẵn sàng
+    [x] Node.js 20 và npm sẵn sàng
+    [ ] Docker Engine và Docker Compose v2 sẵn sàng
+    [x] Ghi kết quả pytest hiện tại hoặc NOT VERIFIED
+    VERIFIED: Python 3.12.13; Node.js 20.20.2/npm 10.8.2; pytest 40 passed. Docker Engine và Python 3.11 không có trên host. Docker Compose v5.5.0 standalone chỉ được dùng để parse config.
+
+======================================================================
+P0 — GIT VÀ RUNTIME DATA SAFETY
+======================================================================
+
+[x] 3. Cập nhật .gitignore
+    [x] Ignore data/*
+    [x] Cho phép !data/.gitkeep
+    [x] Ignore *.db, *.db-journal, *.db-shm, *.db-wal
+    [x] Ignore *.sqlite và sidecar -journal/-shm/-wal
+    [x] Ignore *.sqlite3 và sidecar -journal/-shm/-wal
+    [x] Ignore *.key
+    [x] Ignore *.log
+    [x] Ignore .env và .env.*
+    [x] Cho phép !.env.example
+    [x] Không ignore nhầm JSON/YAML/config cần version control
+
+[ ] 4. Tạo data/.gitkeep
+    [x] Tạo data/ nếu chưa có
+    [x] Tạo data/.gitkeep
+    [ ] git ls-files chỉ thấy data/.gitkeep trong data/
+    [ ] Không có database/key/log runtime đang staged
+    NOT VERIFIED: hai mục Git cần repository thật.
+
+[ ] 5. Tạo và verify .dockerignore
+    [x] Ignore .git
+    [x] Ignore .env và .env.*
+    [x] Ignore data/ và database/key/log/backup
+    [x] Ignore .venv, venv, __pycache__, .pytest_cache và *.pyc
+    [x] Ignore node_modules và coverage/build output không cần thiết
+    [x] Không loại nhầm source/lockfile cần cho Docker build
+    [ ] Verify Docker build context không chứa runtime secret
+    [ ] Verify final image/layers không chứa .env, data hoặc .git
+    NOT VERIFIED: Docker Engine không có; rules và Docker inputs đã được automated test nhưng context/layer thực tế chưa inspect.
+
+[ ] 6. Audit tracked runtime files
+    [ ] Chạy git ls-files
+    [ ] Kiểm tra .env và .env.*
+    [ ] Kiểm tra renew.db và mọi *.db/*.sqlite/*.sqlite3
+    [ ] Kiểm tra database sidecar
+    [ ] Kiểm tra secret.key và mọi *.key
+    [ ] Kiểm tra log, backup, token và credential
+    [ ] Nếu đang track, dùng git rm --cached đúng file
+    [ ] Verify dữ liệu local cần giữ không bị xóa
+    NOT VERIFIED: không có Git metadata nên không thể audit tracked/staged files.
+
+[ ] 7. Audit Git history nếu repo từng được push
+    [ ] Secret scanner chạy với full history/fetch-depth 0
+    [ ] Không có tenant/client secret thật
+    [ ] Không có refresh/access token hoặc JWT thật
+    [ ] Không có Telegram token hoặc webhook URL thật
+    [ ] Không có admin password/private key thật
+    [ ] Secret đã lộ được rotate/revoke
+    [ ] History được purge khi cần
+    [ ] Remote history được verify lại sau purge
+    NOT VERIFIED: không có Git history/remote. Gitleaks current-tree scan riêng đã pass, không thay thế full-history scan.
+
+======================================================================
+P0 — CONFIG, STORAGE VÀ QUICK START
+======================================================================
+
+[x] 8. Tạo .env.example
+    [x] Có HOST_PORT=8080
+    [x] Có DATA_DIR=./data với chú thích Docker /app/data
+    [x] Có PUBLIC_BASE_URL=
+    [x] Có ALLOWED_ORIGINS=
+    [x] Có SECRET_KEY= và hướng dẫn để trống cho auto-generation
+    [x] Có DEFAULT_TIMEZONE=UTC
+    [x] Có LOG_RETENTION_DAYS=30
+    [x] LOG_LEVEL chỉ thêm nếu xác định là supported config
+    [x] WEBUI_PASSWORD chỉ được mô tả như migration bridge
+    [x] DATABASE_URL/PORT/DEBUG chỉ document nếu chính thức hỗ trợ
+    [x] Không có credential thật hoặc secret-looking sample
+    [x] Từng biến được đối chiếu app/config.py và Compose
+
+[x] 9. Đồng bộ Compose configuration
+    [x] compose.build.yml là flow local build được document
+    [x] compose.yml dùng ghcr.io/trquan06/e5-auto-renew
+    [x] HOST_PORT mặc định 8080
+    [x] App trong container dùng DATA_DIR=/app/data
+    [x] PUBLIC_BASE_URL rỗng không làm startup crash
+    [x] SECRET_KEY rỗng tạo và persist secret.key
+    [x] Không hardcode production secret/origin
+    [x] docker compose config parse thành công cho cả hai file
+
+[ ] 10. Chốt storage strategy và quyền ghi
+    [x] Quyết định named volume mặc định hoặc bind mount ./data
+    [ ] Nếu named volume: volume persist qua recreate/restart
+    [x] Nếu bind mount: README tạo data và chown 10001:10001 trên Linux
+    [x] Không dùng chmod 777
+    [ ] Clean Linux clone cho UID/GID 10001 tạo renew.db/secret.key
+    [x] Backup/restore giữ database và matching secret.key cùng nhau
+    NOT VERIFIED: named-volume persistence và UID/GID 10001 cần Docker Engine trên Linux.
+
+[ ] 11. Sửa Docker Quick Start
+    [x] Clone URL đúng
+    [x] cd E5-Auto-Renew
+    [x] Có lệnh Bash copy .env.example thành .env
+    [x] Có lệnh PowerShell tương ứng khi cần
+    [x] Có bước chuẩn bị storage/permission chính xác
+    [x] Docker command khớp compose.build.yml
+    [x] Có command xem setup code trong logs
+    [x] Có health check và URL http://localhost:8080
+    [ ] Chạy được từ clean clone không sửa thủ công
+    NOT VERIFIED: clean-clone Docker execution requires a Git repository and Docker Engine.
+
+[x] 12. Sửa run.bat
+    [x] Không cd vào subfolder ms365-auto-renew không tồn tại
+    [x] Dùng thư mục chứa run.bat làm project root
+    [x] Chạy đúng run.py
+    [x] Thông báo rõ khi Python/dependency thiếu
+    [x] Smoke test trên Windows pass
+
+======================================================================
+P0 — REPOSITORY/IMAGE NAME VÀ DOCUMENTATION TRUTH
+======================================================================
+
+[x] 13. Chuẩn hóa repository URL
+    [x] Dùng https://github.com/trquan06/E5-Auto-Renew
+    [x] Dockerfile OCI source label đúng
+    [x] Portainer repository-build context đúng
+    [x] README.md và README.vi.md đúng
+    [x] Deployment/operations docs đúng
+    [x] GITHUB_PACKAGE.md dùng folder E5-Auto-Renew
+    [x] PLAN.md và TASK_CHECKLIST.md không còn placeholder sai
+
+[x] 14. Chuẩn hóa GHCR image
+    [x] Dùng ghcr.io/trquan06/e5-auto-renew
+    [x] compose.yml đúng
+    [x] portainer/stack.image.yml đúng
+    [x] README examples đúng
+    [x] docs/DEPLOYMENT.md đúng
+    [x] Không còn ghcr.io/OWNER
+    [x] Package slug kỹ thuật chỉ đổi khi thật sự cần
+
+[x] 15. Xóa claim chưa có bằng chứng
+    [x] README không claim CI chưa tồn tại
+    [x] README không claim security scan chưa tồn tại
+    [x] README không claim GHCR multi-arch chưa tồn tại
+    [x] Project layout không liệt kê .github nếu chưa tạo
+    [x] TASK_CHECKLIST.md bỏ [x] khỏi task chưa triển khai/verify
+    [x] PLAN.md phân biệt mục tiêu với completed implementation
+    [x] GITHUB_PACKAGE.md không claim ZIP filtering chưa được kiểm chứng
+
+======================================================================
+P0 — TRUSTED PROXY RELEASE BLOCKER
+======================================================================
+
+[x] 16. Bỏ trust forwarded headers wildcard
+    [x] Dockerfile không mặc định --forwarded-allow-ips "*"
+    [x] Chỉ trust proxy IP/subnet explicit nếu cần
+    [x] Cấu hình trusted proxy được document
+    [x] Deployment sau proxy bắt buộc PUBLIC_BASE_URL HTTPS
+    [x] Port 8080 không được expose trực tiếp ra public Internet
+
+[x] 17. Verify forwarded-header security
+    [x] Untrusted X-Forwarded-For không thay client identity
+    [x] Untrusted X-Forwarded-For không né login rate limit
+    [x] Untrusted X-Forwarded-For không né setup rate limit
+    [x] Untrusted X-Forwarded-Host/Proto không đổi OAuth public origin
+    [x] Trusted reverse proxy vẫn truyền đúng client IP/scheme/host
+    [x] Test được thêm vào automated suite
+
+======================================================================
+P1 — GITHUB ACTIONS VÀ DEPENDABOT
+======================================================================
+
+[x] 18. Tạo .github structure
+    [x] Tạo .github/workflows/
+    [x] Tạo .github/workflows/ci.yml
+    [x] Tạo .github/workflows/docker.yml
+    [x] Tạo .github/workflows/security.yml
+    [x] Tạo .github/dependabot.yml
+
+[x] 19. Backend CI
+    [x] Trigger push
+    [x] Trigger pull_request
+    [x] Matrix Python 3.11
+    [x] Matrix Python 3.12
+    [x] Install requirements-dev.txt
+    [x] python -m compileall app tests run.py
+    [x] pytest -q
+    [x] Không cần credential production
+    [x] Workflow syntax hợp lệ
+
+[x] 20. Frontend reproducibility CI
+    [x] Dùng Node.js 20
+    [x] npm ci
+    [x] npm run build
+    [x] git diff --exit-code -- app/static
+    [x] package-lock.json được dùng
+    [x] Generated assets đã commit đồng bộ
+
+[x] 21. CI hygiene
+    [x] Có concurrency/cancel cho run cũ khi phù hợp
+    [x] Permissions mặc định read-only
+    [x] Không thêm linter khi chưa có project lint policy
+    [x] Action versions được pin ổn định
+    [x] CI logs không lộ secret
+
+[ ] 22. Docker PR build và smoke test
+    [x] Pull request build image nhưng không login/push
+    [x] Build một platform có thể load để smoke test
+    [ ] Container chạy non-root UID/GID 10001
+    [ ] Container đạt healthy
+    [ ] /health trả 2xx
+    [ ] Setup page load
+    [x] PR từ fork không nhận secret-bearing step
+    NOT VERIFIED: smoke job definition pass actionlint, nhưng chưa chạy trên GitHub/Docker.
+
+[ ] 23. GHCR publish
+    [x] Image path ghcr.io/trquan06/e5-auto-renew
+    [x] Main publish edge chỉ khi đúng release policy
+    [x] Tag vX.Y.Z tạo semantic version tags
+    [x] latest chỉ publish theo policy rõ ràng
+    [ ] linux/amd64 được build
+    [ ] linux/arm64 được build nếu docs claim multi-arch
+    [x] packages:write chỉ cấp cho publish job
+    [x] OCI source/revision/version/created labels đúng
+    [ ] Pull image bằng digest và smoke test pass
+    NOT VERIFIED: publish workflow chưa chạy; architectures, manifest và digest chưa tồn tại để inspect.
+
+[ ] 24. Security workflow
+    [x] pip-audit chạy
+    [x] Secret scan current tree chạy
+    [ ] Secret scan full Git history chạy
+    [ ] Trivy filesystem hoặc container scan chạy
+    [x] Severity/fail policy được document
+    [x] Workflow không log secret
+    [x] Action nhạy cảm được pin, ưu tiên commit SHA
+    NOT VERIFIED: pip-audit và Gitleaks current tree pass local; history thiếu .git và Trivy workflow chưa chạy.
+
+[ ] 25. Dependabot
+    [x] pip weekly updates
+    [x] npm weekly updates
+    [x] github-actions weekly updates
+    [x] docker weekly updates
+    [x] Open PR limit hợp lý
+    [x] Minor/patch grouping được cân nhắc
+    [ ] GitHub nhận config không báo lỗi
+    NOT VERIFIED: config parse local; GitHub chưa nhận repository/config.
+
+======================================================================
+P1 — WEB SECURITY BASELINE
+======================================================================
+
+[x] 26. Security headers
+    [x] Content-Security-Policy phù hợp local static assets
+    [x] CSP không cho arbitrary script source
+    [x] frame-ancestors hoặc X-Frame-Options
+    [x] X-Content-Type-Options: nosniff
+    [x] Referrer-Policy
+    [x] API nhạy cảm dùng Cache-Control: no-store
+    [x] HSTS chỉ bật tại HTTPS edge phù hợp
+    [x] FastAPI docs và OAuth popup không bị hỏng
+    [x] Automated tests kiểm tra header quan trọng
+
+======================================================================
+P1 — LOCAL VALIDATION
+======================================================================
+
+[ ] 27. Clean dependencies
+    [ ] Clean Python 3.11 environment install requirements-dev.txt
+    [x] Clean Python 3.12 environment install requirements-dev.txt
+    [x] Node.js 20 npm ci thành công
+    [x] Không có dependency conflict blocker
+    [x] Không sử dụng credential thật
+    NOT VERIFIED: Python 3.11 không có trên host.
+
+[ ] 28. Compile và pytest
+    [ ] Python 3.11 compile pass
+    [ ] Python 3.11 pytest -q pass
+    [x] Python 3.12 compile pass
+    [x] Python 3.12 pytest -q pass
+    [x] Không skip/bỏ qua test fail để release
+    VERIFIED: Python 3.12.13 compile pass; pytest 40 passed, 0 failed/skipped.
+
+[x] 29. Frontend build
+    [x] npm run build pass
+    [x] Generated Tailwind asset đúng
+    [x] Chart.js/local assets đúng
+    [x] Build lần hai không tạo diff
+
+[ ] 30. Docker build
+    [ ] docker build -t e5-auto-renew:test . pass
+    [ ] compose.build.yml build pass
+    [ ] Image final chạy USER 10001:10001
+    [ ] Image không chứa .env/data/.git/test secret
+    [x] Docker healthcheck hợp lệ
+    NOT VERIFIED: Dockerfile/Compose healthcheck và USER được static-test/parse; không có Docker Engine để build/inspect image.
+
+[ ] 31. Runtime smoke test với clean storage
+    [x] App start không crash
+    [ ] Container healthy
+    [x] /health trả 2xx
+    [x] Setup page load
+    [x] Protected API trả setup_required trước setup
+    [x] renew.db được tạo đúng location
+    [x] secret.key được tạo đúng location
+    [ ] secret.key mode phù hợp trên Linux
+    [x] Logs không lộ setup digest/token/password/secret
+    [x] Restart giữ database, key và setup state
+    VERIFIED: local Python 3.12 clean-storage smoke/restart pass. Container health và Linux mode vẫn NOT VERIFIED.
+
+[ ] 32. Runtime ignore verification
+    [ ] git status không hiện .env
+    [ ] git status không hiện renew.db/sidecar
+    [ ] git status không hiện secret.key
+    [ ] git status không hiện runtime logs/backups
+    [ ] git check-ignore -v pass cho từng loại
+    [ ] git add . dry-run không stage runtime files
+    NOT VERIFIED: rules có automated tests, nhưng các lệnh này cần repository Git thật.
+
+[ ] 33. Clean clone test
+    [ ] Clone vào thư mục Linux mới
+    [ ] Làm đúng README từng bước
+    [ ] Storage permission hoạt động với UID 10001
+    [ ] Docker build/start/setup thành công
+    [ ] Không sửa path hoặc permission ngoài hướng dẫn
+    [ ] Windows/PowerShell flow được kiểm tra nếu claim hỗ trợ
+    [x] run.bat pass nếu claim hỗ trợ
+    NOT VERIFIED: run.bat --check pass từ ngoài project root; toàn bộ clean-clone/Linux/Docker flow chưa thể chạy.
+
+======================================================================
+P1 — DOCUMENTATION VÀ RELEASE METADATA
+======================================================================
+
+[ ] 34. README.md
+    [x] Repo URL/folder/image đúng
+    [x] .env.example có thật
+    [ ] Quick Start đã chạy từ clean clone
+    [x] Storage ownership/backup đúng
+    [x] Reverse proxy/PUBLIC_BASE_URL đúng
+    [x] CI/security/GHCR claims có thật
+    [x] Update/rollback dùng immutable tag khi production
+    NOT VERIFIED: Quick Start chưa chạy từ clean clone Docker.
+
+[x] 35. README.vi.md
+    [x] Đồng bộ các thông tin quan trọng với README.md
+    [x] Command Bash/PowerShell chính xác
+    [x] Không còn placeholder ngoài ví dụ có chủ đích
+    [x] Security warning và backup đúng
+
+[x] 36. SECURITY.md
+    [x] Có private vulnerability reporting
+    [x] Có warning cho .env/database/key/token/log/backup
+    [x] Có hướng dẫn rotate/revoke credential bị leak
+    [x] Có lưu ý database và matching key đều nhạy cảm
+    [x] Có trusted proxy và PUBLIC_BASE_URL guidance
+    [x] Supported versions chỉ claim bản thật sự phát hành
+
+[x] 37. Các docs còn lại
+    [x] CONTRIBUTING setup/test/build đúng
+    [x] CONTRIBUTING nhắc i18n và generated assets
+    [x] DEPLOYMENT repo/image/Portainer đúng
+    [x] ENTRA_SETUP callback và permission đúng
+    [x] OPERATIONS backup/restore/rollback đúng
+    [x] GITHUB_PACKAGE folder và package claims đúng
+    [x] PLAN.md không claim unimplemented feature đã complete
+    [x] TASK_CHECKLIST.md không tick task chưa verify
+
+[x] 38. Version và release notes
+    [x] app/config.py version đúng
+    [x] pyproject.toml version đúng
+    [x] package.json version đúng
+    [x] Docker OCI version đúng hoặc lấy từ build metadata
+    [x] Release notes/changelog v2.0.0 hoàn tất
+    [x] License/third-party notices đã review
+
+======================================================================
+P2 — AUTH/SESSION VÀ SUPPLY-CHAIN HARDENING
+======================================================================
+
+[x] 39. Đánh giá JWT localStorage
+    [x] Liệt kê toàn bộ nơi đọc/ghi/xóa token
+    [x] Đánh giá XSS exposure sau CSP
+    [x] Quyết định giữ bearer token hay chuyển cookie
+
+[ ] 40. HttpOnly cookie nếu chọn migration
+    [ ] HttpOnly
+    [ ] Secure trong production
+    [ ] SameSite phù hợp
+    [ ] Expiration/session lifecycle rõ
+    [ ] Logout xóa cookie
+    [ ] CSRF threat model hoàn tất
+    [ ] CSRF protection được thêm nếu cần
+    [ ] Login/logout/OAuth/state-changing endpoint tests pass
+    NOT SELECTED FOR 2.0.0: docs/AUTH_SESSION_DECISION.md giữ bearer token; không tick migration cookie/CSRF chưa triển khai.
+
+[ ] 41. Supply-chain nâng cao nếu chọn
+    [ ] Tạo SBOM
+    [ ] Build provenance/attestation
+    [ ] Ký image hoặc document digest verification
+    [ ] Release artifact checksums
+    NOT VERIFIED: workflow yêu cầu SBOM/provenance nhưng chưa publish artifact; signing/checksums chưa triển khai.
+
+======================================================================
+FINAL PRE-PUSH/PRE-RELEASE AUDIT
+======================================================================
+
+[x] 42. Placeholder audit
+    [x] Không còn OWNER
+    [x] Không còn github.com/OWNER hoặc ghcr.io/OWNER
+    [x] Không còn cd ms365-auto-renew sai
+    [x] TODO/FIXME/CHANGE_ME đã review
+    [x] example.com/localhost đã review từng kết quả
+    [x] Package slug còn lại đều có chủ đích
+    VERIFIED: audit loại trừ các literal dùng để mô tả chính rule audit trong release plan/checklist; mọi release consumer đã sạch. example.com chỉ còn ở ví dụ reserved-domain, localhost chỉ còn ở local/test flow.
+
+[ ] 43. Secret audit
+    [x] Current tree scan pass
+    [ ] Full history scan pass
+    [ ] Không có credential thật trong staged diff
+    [ ] Mọi secret từng lộ đã rotate/revoke
+    VERIFIED: Gitleaks 8.30.1 current tree pass. Git history/staged diff/rotation status remain NOT VERIFIED without .git and owner confirmation.
+
+[ ] 44. Unwanted-file audit
+    [ ] Không track cache/virtualenv/node_modules
+    [ ] Không track database/key/sidecar/log/backup
+    [ ] Không track IDE/user metadata không cần thiết
+    [ ] Không track security report chứa dữ liệu nhạy cảm
+    NOT VERIFIED: tracking state requires .git. Ignore rules cover these file classes.
+
+[ ] 45. Git final check
+    [ ] git status sạch hoặc chỉ có intended files
+    [ ] git diff đã review
+    [ ] git diff --cached đã review
+    [ ] git ls-files đã review
+    [ ] Remote/branch/tag target đúng
+    NOT VERIFIED: no .git directory.
+
+[ ] 46. GitHub final check
+    [ ] ci.yml pass
+    [ ] docker.yml pass
+    [ ] security.yml pass
+    [ ] Dependabot config được nhận
+    [ ] Actions permissions đã review
+    [ ] Logs/artifacts không chứa secret
+    NOT VERIFIED: workflows have not run in GitHub.
+
+[ ] 47. Release artifact check
+    [x] GHCR path đúng
+    [x] Semantic/latest/edge tags đúng policy
+    [ ] amd64 image chạy
+    [ ] arm64 image chạy nếu được claim
+    [ ] Pull-by-digest smoke test pass
+    [ ] OCI metadata đúng
+    [x] Release notes đúng version
+    NOT VERIFIED: no published GHCR image/manifest/digest is available from this extracted folder.
+
+======================================================================
+DEFINITION OF DONE
+======================================================================
+
+[ ] git add . không thể stage .env, database, key, sidecar, log hoặc runtime backup
+[ ] Docker context/image không chứa secret, runtime data hoặc Git metadata
+[x] .env.example tồn tại, khớp source/Compose và không có credential
+[ ] Clean Linux clone chạy đúng README, kể cả quyền ghi data
+[x] run.bat dùng đúng layout và pass nếu claim hỗ trợ Windows
+[x] Không còn OWNER/repo/image/path placeholder không chủ đích
+[x] Forwarded headers không trust wildcard và không thể spoof để né rate limit
+[x] README.md, README.vi.md và docs phản ánh đúng implementation
+[ ] Python 3.11 compile/pytest pass
+[x] Python 3.12 compile/pytest pass
+[x] npm ci/build reproducible pass
+[ ] Docker non-root, health và persistence smoke test pass
+[ ] Dependency, secret-history và filesystem/container scans pass
+[ ] Dependabot hoạt động cho pip, npm, Docker và Actions
+[ ] GHCR image/tags/architectures/digest đã verify
+[ ] Không còn credential thật chưa rotate trong current tree hoặc Git history
+[ ] Repository đủ an toàn để public và tạo GitHub Release

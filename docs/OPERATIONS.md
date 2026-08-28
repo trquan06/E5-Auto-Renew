@@ -2,11 +2,13 @@
 
 ## Backup
 
-Stop the container for a consistent SQLite backup, then archive the entire persistent data directory or named volume. A valid backup contains at least `renew.db` and `secret.key`; SQLite `-wal`/`-shm` files may exist while the service is running.
+Stop the container for a consistent SQLite backup, then copy or archive the entire persistent data directory or `e5_data` Compose volume with a trusted volume-backup tool. A valid backup contains at least `renew.db` and `secret.key`; SQLite `-wal`/`-shm` files may exist while the service is running.
 
 ```bash
 docker compose stop webui
-tar -czf ms365-data-$(date +%Y%m%d).tgz data/
+# Back up the complete e5_data named volume using your platform's volume tool.
+# For a bind-mount override only:
+tar -czf e5-data-$(date +%Y%m%d).tgz data/
 docker compose start webui
 ```
 
@@ -16,7 +18,7 @@ Store backups encrypted with restricted access. Test restoration on an isolated 
 
 1. Stop the service.
 2. Move the current data directory aside so rollback remains possible.
-3. Restore the complete archived data directory, preserving ownership for UID/GID `10001`.
+3. Restore the complete named volume or archived bind-mount directory, preserving ownership for UID/GID `10001`.
 4. Start the exact application version used to create the backup, verify login and account decryption, then upgrade if desired.
 
 Restoring a database without its matching `secret.key` makes encrypted Microsoft tokens unreadable. Supplying a different `SECRET_KEY` has the same effect.
@@ -25,14 +27,14 @@ Restoring a database without its matching `secret.key` makes encrypted Microsoft
 
 1. Read release notes and security advisories.
 2. Back up the data volume.
-3. Pull an immutable release tag: `docker compose pull`.
+3. Pin `ghcr.io/trquan06/e5-auto-renew:<version-or-digest>` and run `docker compose pull`.
 4. Recreate: `docker compose up -d`.
 5. Verify `/health`, container health, login, account list, scheduler state, and one authorized connection test.
 6. Keep the previous image until the observation window is complete.
 
 ## Rollback
 
-Set `image:` to the previous immutable tag and recreate the container. If the new version changed data incompatibly, stop the service and restore the matching pre-update data backup before starting the older image. Never run two instances against the same SQLite volume.
+Set `image:` to the previous immutable tag or digest and recreate the container. If the new version changed data incompatibly, stop the service and restore the matching pre-update data backup before starting the older image. Never run two instances against the same SQLite volume.
 
 ## Logs and retention
 

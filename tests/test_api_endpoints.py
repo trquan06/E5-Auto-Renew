@@ -79,6 +79,40 @@ async def test_login_rate_limit(initialized_client):
 
 
 @pytest.mark.asyncio
+async def test_untrusted_forwarded_for_cannot_evade_login_rate_limit(initialized_client):
+    for attempt in range(5):
+        response = await initialized_client.post(
+            "/api/auth/login",
+            json={"password": "incorrect"},
+            headers={"X-Forwarded-For": f"198.51.100.{attempt + 1}"},
+        )
+        assert response.status_code == 401
+    limited = await initialized_client.post(
+        "/api/auth/login",
+        json={"password": "incorrect"},
+        headers={"X-Forwarded-For": "203.0.113.250"},
+    )
+    assert limited.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_untrusted_forwarded_for_cannot_evade_setup_rate_limit(client):
+    for attempt in range(5):
+        response = await client.post(
+            "/api/setup/initialize",
+            json={"setup_code": "AAAA-BBBB-CCCC", "password": ADMIN_PASSWORD},
+            headers={"X-Forwarded-For": f"198.51.100.{attempt + 1}"},
+        )
+        assert response.status_code == 400
+    limited = await client.post(
+        "/api/setup/initialize",
+        json={"setup_code": "AAAA-BBBB-CCCC", "password": ADMIN_PASSWORD},
+        headers={"X-Forwarded-For": "203.0.113.250"},
+    )
+    assert limited.status_code == 429
+
+
+@pytest.mark.asyncio
 async def test_oauth_endpoints(initialized_client, auth_headers):
     response = await initialized_client.get(
         "/api/accounts/oauth/authorize-url",
@@ -103,6 +137,19 @@ async def test_oauth_endpoints(initialized_client, auth_headers):
         headers=auth_headers,
     )
     assert invalid_redirect.status_code == 400
+
+    forwarded_spoof = await initialized_client.get(
+        "/api/accounts/oauth/authorize-url",
+        params={"client_id": "dummy-client-id", "tenant_id": "common", "account_name": "Demo"},
+        headers={
+            **auth_headers,
+            "Origin": "http://test",
+            "X-Forwarded-Host": "evil.example",
+            "X-Forwarded-Proto": "https",
+        },
+    )
+    assert forwarded_spoof.status_code == 200
+    assert forwarded_spoof.json()["redirect_uri"] == "http://test/api/accounts/oauth/callback"
 
 
 @pytest.mark.asyncio

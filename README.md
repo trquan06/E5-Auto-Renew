@@ -16,7 +16,7 @@ MS365 Auto Renew is a self-hosted WebUI for scheduling development and test work
 - English by default, plus Vietnamese and Simplified Chinese; locale and theme persist locally.
 - Dashboard, accounts, scheduling, execution logs, notification settings, loading/empty/error states, confirmation dialogs, and accessible keyboard focus.
 - Local, pinned Tailwind CSS and Chart.js assets; no runtime CDN dependency.
-- Python 3.11/3.12 CI, container smoke tests, dependency/secret/image scanning, and multi-architecture GHCR publishing.
+- Repository workflows for Python 3.11/3.12 CI, container smoke tests, dependency/secret/filesystem scanning, and multi-architecture GHCR publishing.
 
 ## Quick start with Docker
 
@@ -24,22 +24,25 @@ Requirements: Docker Engine 24+ with Docker Compose v2.
 
 ```bash
 git clone https://github.com/trquan06/E5-Auto-Renew.git
-cd ms365-auto-renew
+cd E5-Auto-Renew
 cp .env.example .env
 docker compose -f compose.build.yml up -d --build
 docker compose -f compose.build.yml logs webui
+curl --fail http://localhost:8080/health
 ```
+
+PowerShell uses `Copy-Item .env.example .env`; the remaining Docker commands are the same.
 
 Open `http://localhost:8080`. Copy the one-time setup code from the logs, initialize the administrator password, and then sign in. The code expires after 15 minutes and changes when an incomplete installation restarts.
 
-For a published image, replace `OWNER` in `compose.yml`, then run:
+For the published `ghcr.io/trquan06/e5-auto-renew:2.0.0` image, run:
 
 ```bash
 docker compose up -d
 docker compose logs webui
 ```
 
-The SQLite database, encryption key, and runtime state live under `/app/data`. Keep that volume persistent and private. On Linux bind mounts, ensure UID/GID `10001` can write the host data directory.
+The SQLite database, encryption key, and runtime state live in the Docker-managed `e5_data` volume at `/app/data`. Compose keeps the volume across container recreation. Keep it private and back it up as one unit. If you intentionally replace it with a Linux bind mount, first run `mkdir -p data && sudo chown 10001:10001 data`; never use `chmod 777`.
 
 ## Local Python development
 
@@ -72,20 +75,26 @@ Copy `.env.example` to `.env`. Important variables:
 
 | Variable | Default | Purpose |
 |---|---:|---|
+| `HOST_BIND` | `127.0.0.1` | Host interface used by Compose; keep loopback unless a firewall/proxy topology requires otherwise |
+| `HOST_PORT` | `8080` | Host port used by Compose |
 | `DATA_DIR` | `./data` locally, `/app/data` in Docker | Persistent database and generated encryption key |
 | `PUBLIC_BASE_URL` | empty | Exact external WebUI origin used for OAuth redirects |
 | `ALLOWED_ORIGINS` | empty | Optional comma-separated additional trusted origins; no wildcards |
 | `SECRET_KEY` | generated | Optional durable secret override; changing it invalidates sessions and encrypted tokens |
 | `DEFAULT_TIMEZONE` | `UTC` | Default IANA timezone for new schedules |
 | `LOG_RETENTION_DAYS` | `30` | Operational log retention target |
+| `LOG_LEVEL` | `INFO` | Python application log level |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Explicit proxy IP/CIDR allowlist; `*` is rejected |
 
 `WEBUI_PASSWORD` exists only as a v1 migration bridge. It has no default, is hashed into the database on startup, and should then be removed from the environment.
+
+The internal Python/npm package slugs retain `ms365-auto-renew` for compatibility; repository, folder, container, and GHCR identifiers use E5 Auto Renew.
 
 ## Data and security
 
 - Never publish `.env`, `data/renew.db`, `data/secret.key`, database sidecars, logs, tokens, or backups.
 - Back up the whole data volume so the database and `secret.key` remain together.
-- Put remote deployments behind an HTTPS reverse proxy. `PUBLIC_BASE_URL` must match the browser-visible origin.
+- Put remote deployments behind an HTTPS reverse proxy. `PUBLIC_BASE_URL` must match the browser-visible origin and `FORWARDED_ALLOW_IPS` must name only the proxy IP/CIDR. Keep port 8080 bound to loopback or blocked from the public Internet.
 - The application keeps authorization codes only long enough to exchange them and clears them from the callback page and popup message payload.
 - Review [SECURITY.md](SECURITY.md) before exposing the service to a network.
 
@@ -107,4 +116,4 @@ compose.build.yml     Local/repository build deployment
 
 ## Contributing and license
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). This project is released under the [MIT License](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md). This project is released under the [MIT License](LICENSE); dependency license review is recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

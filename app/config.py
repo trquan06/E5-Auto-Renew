@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     HOST: str = "0.0.0.0"
     PORT: int = 8080
+    FORWARDED_ALLOW_IPS: str = "127.0.0.1"
 
     DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
     DATABASE_URL: str = ""
@@ -110,6 +111,11 @@ class Settings(BaseSettings):
 
         object.__setattr__(self, "PUBLIC_BASE_URL", _normalise_base_url(self.PUBLIC_BASE_URL))
         object.__setattr__(self, "LOG_LEVEL", self.LOG_LEVEL.upper())
+
+        trusted_proxies = self.FORWARDED_ALLOW_IPS.strip() or "127.0.0.1"
+        if "*" in {entry.strip() for entry in trusted_proxies.split(",")}:
+            raise ValueError("FORWARDED_ALLOW_IPS must list explicit IP addresses or CIDR ranges; wildcard trust is forbidden")
+        object.__setattr__(self, "FORWARDED_ALLOW_IPS", trusted_proxies)
 
     @property
     def AES_KEY(self) -> bytes:

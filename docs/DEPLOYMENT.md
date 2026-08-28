@@ -18,22 +18,27 @@ On Windows PowerShell activate with `.venv\Scripts\Activate.ps1`. Open `http://l
 ## Docker Compose: build locally
 
 ```bash
+git clone https://github.com/trquan06/E5-Auto-Renew.git
+cd E5-Auto-Renew
 cp .env.example .env
 docker compose -f compose.build.yml up -d --build
 docker compose -f compose.build.yml logs --follow webui
+curl --fail http://localhost:8080/health
 ```
 
-The image runs as UID/GID `10001`. On Linux, prepare a bind mount with `mkdir -p data && sudo chown 10001:10001 data`. Do not make the directory world-writable.
+In PowerShell use `Copy-Item .env.example .env`. The default `e5_data` named volume is writable by the image's UID/GID `10001` and persists through container recreation. For an intentional Linux bind-mount override, use `mkdir -p data && sudo chown 10001:10001 data`; do not make it world-writable.
 
 ## Docker Compose: published image
 
-Replace the `OWNER` placeholder in `compose.yml` with the GitHub organization/user that published the image. Prefer an immutable release tag in production:
+`compose.yml` uses the immutable production image tag:
 
 ```yaml
-image: ghcr.io/example/ms365-auto-renew:2.0.0
+image: ghcr.io/trquan06/e5-auto-renew:2.0.0
 ```
 
-Then run `docker compose up -d` and inspect `docker compose logs webui` for the first-run code. The image supports `linux/amd64` and `linux/arm64` when published by the included release workflow.
+Run `docker compose up -d` and inspect `docker compose logs webui` for the first-run code. Tagged releases publish `linux/amd64` and `linux/arm64` through `.github/workflows/docker.yml`; verify the workflow and pull by digest before production rollout.
+
+The `main` branch publishes `edge`. A `vX.Y.Z` tag publishes `X.Y.Z`, `X.Y`, `X`, and `latest`. Production deployments should use the full semantic version or the manifest digest, not `edge` or `latest`.
 
 ## Portainer
 
@@ -42,7 +47,7 @@ Two examples live in `portainer/`:
 - `stack.image.yml` pulls a GHCR image.
 - `stack.build.yml` builds from a Git repository.
 
-Paste the selected file into a new Stack, replace all `OWNER`, repository, hostname, and `PUBLIC_BASE_URL` placeholders, and deploy. Both examples use a named volume. Find the one-time code in the container logs. Back up the named volume from the Docker host before every update.
+Paste the selected file into a new Stack, set `PUBLIC_BASE_URL` and the proxy/network settings for the deployment, and deploy. Both examples use the real repository/image and a named volume. Find the one-time code in the container logs. Back up the named volume from the Docker host before every update.
 
 ## HTTPS reverse proxy
 
@@ -50,7 +55,10 @@ Remote OAuth requires HTTPS. Configure the proxy to pass the original host and p
 
 ```dotenv
 PUBLIC_BASE_URL=https://ms365.example.com
+FORWARDED_ALLOW_IPS=127.0.0.1
 ```
+
+Set `FORWARDED_ALLOW_IPS` to the exact source IP address or CIDR of the reverse proxy as seen by the application. The safe `127.0.0.1` default deliberately trusts no typical Docker bridge peer; a host proxy may appear as the Docker bridge gateway rather than loopback, so determine and allow only that deployment-specific address. Wildcard trust is rejected. If the proxy is another container, attach both services to a private Docker network, use only that proxy address/network, and do not publish the application port publicly.
 
 Example Nginx location:
 
@@ -66,11 +74,13 @@ location / {
 
 Expose only ports 80/443 at the edge, redirect HTTP to HTTPS, and restrict direct access to port 8080. The Entra redirect URI must be `${PUBLIC_BASE_URL}/api/accounts/oauth/callback` exactly.
 
+Enable HSTS at the HTTPS edge only after the hostname is permanently HTTPS-ready; the application intentionally does not emit HSTS for direct localhost HTTP.
+
 ## Verification
 
 ```bash
 curl --fail https://ms365.example.com/health
-docker inspect --format '{{.State.Health.Status}}' ms365-auto-renew
+docker inspect --format '{{.State.Health.Status}}' e5-auto-renew
 ```
 
 Before setup, protected APIs return `503 setup_required`. After setup, they return `401` without a valid bearer token. This is expected.
