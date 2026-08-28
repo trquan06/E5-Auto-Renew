@@ -23,7 +23,7 @@ MS365 Auto Renew là WebUI tự lưu trữ dùng để lên lịch các khối l
 Yêu cầu Docker Engine 24+ và Docker Compose v2.
 
 ```bash
-git clone https://github.com/OWNER/ms365-auto-renew.git
+git clone https://github.com/trquan06/E5-Auto-Renew.git
 cd ms365-auto-renew
 cp .env.example .env
 docker compose -f compose.build.yml up -d --build
