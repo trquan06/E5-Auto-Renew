@@ -5,7 +5,7 @@ COPY scripts ./scripts
 COPY app/static ./app/static
 RUN npm ci --ignore-scripts && npm run build
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 ARG VERSION=2.0.0
