@@ -1,4 +1,4 @@
-FROM node:20-alpine AS webui
+FROM node:25-alpine AS webui
 WORKDIR /src
 COPY package.json package-lock.json tailwind.config.js ./
 COPY scripts ./scripts
